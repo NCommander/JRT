@@ -1,24 +1,22 @@
 # Just Radio Transmission stuff
 
 # Rationale
-There is no good way as of writing to transfer binary data between two stations short of setting up AMPRnet (aka TCP/IP over AX.25). Most packet data (on VHF and UHF) takes the form of APRS traffic which is digipeated from point to point as as a single packet.
+There is no good way as of writing to transfer bulk data between two stations that can take advantage of digipeating as traditional station-to-station data transmission are simplex. While AX.25 -- the most common Layer 2 Protocol used by Amateur Radio -- supports both relaying and retransmission, the vast majority of packet data transmitted by hams takes the form of APRS traffic.
 
-This allows for easy transmission of position reports, and messages, but doesn't provide a good way of sending a datastream from station to station. Part of this is it would be very nice if it was possible to download
+As compared to traditional AX.25, APRS packets are individual units, and do not require setting up sessions or other overhead, allowing it to work as a ad-hoc mesh network. Two APRS clients don't require a central server for cooridination. This allows for easy transmission of position reports, and messages, but doesn't provide a good way of sending a datastream from station to station.
 
-Historically, packet communications on Amateur Radio takes the form of AX.25 connections. For Packet BBS, this typically has required a simplex connection between stations, due to the timing and retransmission overhead used in traditional packet operations. 
+By implementing a data layer ontop of APRS that is aware of network conditions, and depriotizes itself, it can allow for the bulk transfer of data between two nodes, such as frequency lists, local net information, and the like in much greater detail than is possible via APRS bulletins.
 
-However, if we design a protocol that can handle file transfer via AX.25 UI frames (aka the same type used by APRS), it can be digipeated from station to station.
+The intent is to allow transfer of small files, and creation of bulletin-board style-systems that integrate easily into the modern world of packet radio, as well as being easily accessible to new hams who may have a minimium of hardware on hand. This also provides an alternative to WinLink.
 
 # Goals
  * JRT stations should be able to find and each other via APRS position reports
- * File transmissions should be chunked, and then transmitted packet by packet in 1 kilobyte bursts
-   - Max packet size of AX.25 is 128 bytes, so this represents 8 packets transmitted per chunk
-   - After chunk is transmitting, receiving stations sends signal report, and if any chunks need to be retransmitted
-   - Each chunk should be CRC-ed, and compared to ensure proper transmission
- * Awareness of ALOHA
- * Operation via both simplex, and digipetting must be supported, as well as any other AX.25 routing
+ * JRT should provide a basic communication layer that other applications (such as a file transfer daemon) can use in a generic manner.
+   - Essentially, the effect is to be able to recreate Packet BBSes (in effect) via APRS, with a minimium impact on the broader APRS network.
+ * JRT shall be aware of ALOHA restrictions on APRS, and automatically throttle itself
+   - The intent is the operator simply sets an operation (such as get file, post message, etc), as a bulk message, and data is transmitted as network conditions allowed
+ * Operation via both simplex, and digipetting must be supported, as well as any other AX.25 routing options
  * Provide information and directory services - TBD
- * Lay provisions for future extensions -- maybe even a BBS protocol built around the layer.
 
 # ALOHA
 From aprs.ogr
@@ -41,17 +39,6 @@ APRS runs on the following three principals (from aprs.org)
 4. A 1200 baud system operating as a ALOHA random access channel
 
 For handling congestion control, https://www.rfc-editor.org/rfc/rfc2914.txt has more information as do other RFCs.
-
-# File Transmission Operations
-## LIST
-Lists all files hosted on the JRT node, along with their file ids, and total number of chunks.
-
-## INFO <file_id>
-Provides additional information about a given file
-
-## GET_CHUNK <file_id> <chunk_id>
-Downloads chunk from a given node. Takes arguments for file name, chunk number
-
 
 # Transmission Sessions
 JRT provides a Layer 3 protocol built over APRS that other applications (including itself) can leverage, such as providing tasks as file transfer and more. In effect, from an application perspective, JRT communications operate as (very slow) TCP/IP connections.
@@ -77,26 +64,26 @@ Assuming two nodes, NODEA, and NODEB running JRT, a basic session look something
 
 On startup, and regular intervals (by default 10/30 minutes), a JRT station shall transmit an APRS position report.
 
-JRT capable stations shall be identified by the string JRTxxx, with xx representing a version number
-
-This is represented by standard APRS position reports like so, transmitted as such.
+JRT capable stations shall be identified by the string JRTxxx, with xx representing a version number. This is represented by standard APRS position reports like so, transmitted as such.
 
 ```
 NODEA>JRT001,WIDE1-1:Test Station 1
 NODEB>JRT001,WIDE1-1:Test Station 2
 ```
 
-Each JRT client shall keep a list of all nodes it's seen, possible paths to said node if no direct connection is possible, and such.
-
-Assuming NODEA wishs to list all files provided by NODEB, the command structure would look as follows:
+Each JRT client shall keep a list of all nodes it's seen, possible paths to said node if no direct connection is possible, and such. Assuming NODEA wishs to list all files provided by NODEB, the command structure would look as follows:
 
 ## Transmission start
 A JRT transmission starts via a three-way handshake via APRS messages.
 
-The initiating station sends a START message, with a JRT command, its MTU, and other relevent data required for packet transmission.
+The initiating station sends a START message, with a service name and port number, its MTU, and other relevent data required for packet transmission.
+
+For example, to talk to the FTP service hosted by NODEB, NODEA would send a START command to NODEB, saying it wants to talk to the file transfer service.
 
 The receiving station will send back its MTU, route, transmission interval, and other information via APRS message to confirm transmission settings, along with a time offset in seconds of when it will transmit packets. The neogtation messages will also include a unique transmission ID, which shall remember the settings negotated, and remain valid for 24 hours.
 
 The initating station shall send a ACK or NAK if it can accept those setings, and then wait for transmission. After transmission, another command can be sent via APRS msgs, or the session can be torn down with a FIN.
 
 Transmitting stations shall send a ACK message back including transmission start time, MTU, and other relevant data.
+
+# Application Layer
